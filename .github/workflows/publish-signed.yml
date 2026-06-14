@@ -1,0 +1,32 @@
+# Publish the ECharts library + the signed adapter together — as github-actions[bot], gated
+# on the PUBLIC key. echarts.min.js (the Apache library, delivery:download) and the signed
+# echarts.mybiadapter (the draw) live in dist/ and are published to ONE release so MyBI's
+# install_engine (library) and install_adapter (adapter) both find them on the latest release.
+# Only the adapter is signature-checked; the library is sha256-pinned in the registry.
+name: Publish signed adapter
+on:
+  push:
+    branches: [main]
+    paths: ["dist/*.mybiadapter", "dist/echarts.min.js"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Verify the signed adapter (PUBLIC key — no secrets)
+        run: node scripts/verify-adapter.mjs "$(ls dist/*.mybiadapter | head -1)"
+      - name: Publish library + adapter as github-actions[bot]
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v6.1.0"
+          gh release delete "$tag" -R "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" dist/echarts.min.js dist/*.mybiadapter -R "${{ github.repository }}" --latest \
+            --title "ECharts $tag" \
+            --notes "Apache ECharts library (echarts.min.js) + the MyBI-signed ECharts adapter (verified by CI against the MyBI public key)."
